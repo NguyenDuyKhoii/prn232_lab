@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using AutoMapper;
 using PRN232.LMS.Services.Common;
-using PRN232.LMS.Services.Requests;
-using PRN232.LMS.Services.Responses;
+using PRN232.LMS.Services.BusinessModels;
+using PRN232.LMS.API.Requests;
+using PRN232.LMS.API.Responses;
 using PRN232.LMS.Services.Interfaces;
+
+using PRN232.LMS.API.Helpers;
 
 namespace PRN232.LMS.API.Controllers;
 
@@ -12,17 +16,19 @@ namespace PRN232.LMS.API.Controllers;
 public class EnrollmentsController : ControllerBase
 {
     private readonly IEnrollmentService _enrollmentService;
+    private readonly IMapper _mapper;
 
-    public EnrollmentsController(IEnrollmentService enrollmentService)
+    public EnrollmentsController(IEnrollmentService enrollmentService, IMapper mapper)
     {
         _enrollmentService = enrollmentService;
+        _mapper = mapper;
     }
 
     /// <summary>
     /// Get all enrollments with pagination, search, sorting, and field selection
     /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(PaginatedResponse<List<EnrollmentResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PaginatedResponse<List<object>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search = null,
         [FromQuery] string? sort = null,
@@ -42,8 +48,20 @@ public class EnrollmentsController : ControllerBase
         };
 
         var result = await _enrollmentService.GetAllAsync(queryParams);
-        return Ok(result);
+        var responseData = _mapper.Map<List<EnrollmentResponse>>(result.Data!.Data);
+        var shapedData = FieldHelper.ShapeDataList(responseData, fields);
+
+        var pagination = new PaginationMetadata
+        {
+            Page = result.Data.Page,
+            PageSize = result.Data.PageSize,
+            TotalItems = result.Data.TotalItems,
+            TotalPages = result.Data.TotalPages
+        };
+
+        return Ok(PaginatedResponse<List<object?>>.Ok(shapedData, pagination, result.Message));
     }
+
 
     /// <summary>
     /// Get an enrollment by ID
@@ -54,11 +72,13 @@ public class EnrollmentsController : ControllerBase
     public async Task<IActionResult> GetById(int id, [FromQuery] string? expand = null)
     {
         var result = await _enrollmentService.GetByIdAsync(id, expand);
-        if (!result.Success && result.Errors?.Contains("404") == true)
+        if (!result.Success)
         {
-            return NotFound(result);
+            return NotFound(ApiResponse<EnrollmentResponse>.NotFound(result.Message));
         }
-        return Ok(result);
+
+        var responseData = _mapper.Map<EnrollmentResponse>(result.Data);
+        return Ok(ApiResponse<EnrollmentResponse>.Ok(responseData));
     }
 
     /// <summary>
@@ -69,12 +89,15 @@ public class EnrollmentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<EnrollmentResponse>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromBody] CreateEnrollmentRequest request)
     {
-        var result = await _enrollmentService.CreateAsync(request);
+        var enrollmentBM = _mapper.Map<EnrollmentBM>(request);
+        var result = await _enrollmentService.CreateAsync(enrollmentBM);
         if (!result.Success)
         {
-            return BadRequest(result);
+            return BadRequest(ApiResponse<EnrollmentResponse>.BadRequest(result.Message));
         }
-        return CreatedAtAction(nameof(GetById), new { id = result.Data?.EnrollmentId }, result);
+
+        var responseData = _mapper.Map<EnrollmentResponse>(result.Data);
+        return CreatedAtAction(nameof(GetById), new { id = responseData.EnrollmentId }, ApiResponse<EnrollmentResponse>.Ok(responseData, result.Message));
     }
 
     /// <summary>
@@ -82,18 +105,21 @@ public class EnrollmentsController : ControllerBase
     /// </summary>
     [HttpPut("{id}")]
     [ProducesResponseType(typeof(ApiResponse<EnrollmentResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<EnrollmentResponse>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<EnrollmentResponse>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<EnrollmentResponse>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateEnrollmentRequest request)
     {
-        var result = await _enrollmentService.UpdateAsync(id, request);
+        var enrollmentBM = _mapper.Map<EnrollmentBM>(request);
+        var result = await _enrollmentService.UpdateAsync(id, enrollmentBM);
         if (!result.Success)
         {
-            if (result.Errors?.Contains("404") == true)
-                return NotFound(result);
-            return BadRequest(result);
+            if (result.StatusCode == 404)
+                return NotFound(ApiResponse<EnrollmentResponse>.NotFound(result.Message));
+            return BadRequest(ApiResponse<EnrollmentResponse>.BadRequest(result.Message));
         }
-        return Ok(result);
+
+        var responseData = _mapper.Map<EnrollmentResponse>(result.Data);
+        return Ok(ApiResponse<EnrollmentResponse>.Ok(responseData, result.Message));
     }
 
     /// <summary>
@@ -107,8 +133,8 @@ public class EnrollmentsController : ControllerBase
         var result = await _enrollmentService.DeleteAsync(id);
         if (!result.Success)
         {
-            return NotFound(result);
+            return NotFound(ApiResponse<bool>.NotFound(result.Message));
         }
-        return Ok(result);
+        return Ok(ApiResponse<bool>.Ok(true, result.Message));
     }
 }

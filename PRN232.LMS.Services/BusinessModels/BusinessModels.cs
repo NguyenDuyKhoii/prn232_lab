@@ -6,7 +6,7 @@ public class SemesterBM
     public string SemesterName { get; set; } = string.Empty;
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
-    public List<CourseBM> Courses { get; set; } = new();
+    public List<CourseBM>? Courses { get; set; }
 }
 
 public class CourseBM
@@ -15,7 +15,7 @@ public class CourseBM
     public string CourseName { get; set; } = string.Empty;
     public int SemesterId { get; set; }
     public string? SemesterName { get; set; }
-    public List<EnrollmentBM> Enrollments { get; set; } = new();
+    public List<EnrollmentBM>? Enrollments { get; set; }
 }
 
 public class StudentBM
@@ -24,7 +24,7 @@ public class StudentBM
     public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public DateTime DateOfBirth { get; set; }
-    public List<EnrollmentBM> Enrollments { get; set; } = new();
+    public List<EnrollmentBM>? Enrollments { get; set; }
 }
 
 public class EnrollmentBM

@@ -43,7 +43,6 @@ public interface IEnrollmentRepository : IRepository<Enrollment>
 
 public interface ISubjectRepository : IRepository<Subject>
 {
-    Task<Subject?> GetByIdAsync(int id);
     Task<bool> ExistsByCodeAsync(string code, int? excludeId = null);
     IQueryable<Subject> GetAllQueryable();
 }

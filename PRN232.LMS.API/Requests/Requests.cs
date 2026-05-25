@@ -1,4 +1,4 @@
-namespace PRN232.LMS.Services.Requests;
+namespace PRN232.LMS.API.Requests;
 
 public class CreateSemesterRequest
 {

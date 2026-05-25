@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using AutoMapper;
 using PRN232.LMS.Services.Common;
-using PRN232.LMS.Services.Requests;
-using PRN232.LMS.Services.Responses;
+using PRN232.LMS.Services.BusinessModels;
+using PRN232.LMS.API.Requests;
+using PRN232.LMS.API.Responses;
 using PRN232.LMS.Services.Interfaces;
+
+using PRN232.LMS.API.Helpers;
 
 namespace PRN232.LMS.API.Controllers;
 
@@ -12,17 +16,21 @@ namespace PRN232.LMS.API.Controllers;
 public class CoursesController : ControllerBase
 {
     private readonly ICourseService _courseService;
+    private readonly IEnrollmentService _enrollmentService;
+    private readonly IMapper _mapper;
 
-    public CoursesController(ICourseService courseService)
+    public CoursesController(ICourseService courseService, IEnrollmentService enrollmentService, IMapper mapper)
     {
         _courseService = courseService;
+        _enrollmentService = enrollmentService;
+        _mapper = mapper;
     }
 
     /// <summary>
     /// Get all courses with pagination, search, sorting, and field selection
     /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(PaginatedResponse<List<CourseResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PaginatedResponse<List<object>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search = null,
         [FromQuery] string? sort = null,
@@ -42,7 +50,18 @@ public class CoursesController : ControllerBase
         };
 
         var result = await _courseService.GetAllAsync(queryParams);
-        return Ok(result);
+        var responseData = _mapper.Map<List<CourseResponse>>(result.Data!.Data);
+        var shapedData = FieldHelper.ShapeDataList(responseData, fields);
+
+        var pagination = new PaginationMetadata
+        {
+            Page = result.Data.Page,
+            PageSize = result.Data.PageSize,
+            TotalItems = result.Data.TotalItems,
+            TotalPages = result.Data.TotalPages
+        };
+
+        return Ok(PaginatedResponse<List<object?>>.Ok(shapedData, pagination, result.Message));
     }
 
     /// <summary>
@@ -54,11 +73,13 @@ public class CoursesController : ControllerBase
     public async Task<IActionResult> GetById(int id, [FromQuery] string? expand = null)
     {
         var result = await _courseService.GetByIdAsync(id, expand);
-        if (!result.Success && result.Errors?.Contains("404") == true)
+        if (!result.Success)
         {
-            return NotFound(result);
+            return NotFound(ApiResponse<CourseResponse>.NotFound(result.Message));
         }
-        return Ok(result);
+
+        var responseData = _mapper.Map<CourseResponse>(result.Data);
+        return Ok(ApiResponse<CourseResponse>.Ok(responseData));
     }
 
     /// <summary>
@@ -69,12 +90,15 @@ public class CoursesController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<CourseResponse>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromBody] CreateCourseRequest request)
     {
-        var result = await _courseService.CreateAsync(request);
+        var courseBM = _mapper.Map<CourseBM>(request);
+        var result = await _courseService.CreateAsync(courseBM);
         if (!result.Success)
         {
-            return BadRequest(result);
+            return BadRequest(ApiResponse<CourseResponse>.BadRequest(result.Message));
         }
-        return CreatedAtAction(nameof(GetById), new { id = result.Data?.CourseId }, result);
+
+        var responseData = _mapper.Map<CourseResponse>(result.Data);
+        return CreatedAtAction(nameof(GetById), new { id = responseData.CourseId }, ApiResponse<CourseResponse>.Ok(responseData, result.Message));
     }
 
     /// <summary>
@@ -82,18 +106,21 @@ public class CoursesController : ControllerBase
     /// </summary>
     [HttpPut("{id}")]
     [ProducesResponseType(typeof(ApiResponse<CourseResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<CourseResponse>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<CourseResponse>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<CourseResponse>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateCourseRequest request)
     {
-        var result = await _courseService.UpdateAsync(id, request);
+        var courseBM = _mapper.Map<CourseBM>(request);
+        var result = await _courseService.UpdateAsync(id, courseBM);
         if (!result.Success)
         {
-            if (result.Errors?.Contains("404") == true)
-                return NotFound(result);
-            return BadRequest(result);
+            if (result.StatusCode == 404)
+                return NotFound(ApiResponse<CourseResponse>.NotFound(result.Message));
+            return BadRequest(ApiResponse<CourseResponse>.BadRequest(result.Message));
         }
-        return Ok(result);
+
+        var responseData = _mapper.Map<CourseResponse>(result.Data);
+        return Ok(ApiResponse<CourseResponse>.Ok(responseData, result.Message));
     }
 
     /// <summary>
@@ -107,8 +134,32 @@ public class CoursesController : ControllerBase
         var result = await _courseService.DeleteAsync(id);
         if (!result.Success)
         {
-            return NotFound(result);
+            return NotFound(ApiResponse<bool>.NotFound(result.Message));
         }
-        return Ok(result);
+        return Ok(ApiResponse<bool>.Ok(true, result.Message));
+    }
+
+    /// <summary>
+    /// Get all enrollments for a specific course (Nested sub-resource under courses)
+    /// </summary>
+    [HttpGet("{courseId}/enrollments")]
+    [ProducesResponseType(typeof(PaginatedResponse<List<EnrollmentResponse>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetEnrollments(
+        int courseId,
+        [FromQuery] int page = 1,
+        [FromQuery] int size = 10)
+    {
+        var result = await _enrollmentService.GetByCourseIdAsync(courseId, page, size);
+        var responseData = _mapper.Map<List<EnrollmentResponse>>(result.Data!.Data);
+
+        var pagination = new PaginationMetadata
+        {
+            Page = result.Data.Page,
+            PageSize = result.Data.PageSize,
+            TotalItems = result.Data.TotalItems,
+            TotalPages = result.Data.TotalPages
+        };
+
+        return Ok(PaginatedResponse<List<EnrollmentResponse>>.Ok(responseData, pagination, "Course enrollments retrieved successfully"));
     }
 }

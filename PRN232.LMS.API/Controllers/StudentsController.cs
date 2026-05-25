@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using AutoMapper;
 using PRN232.LMS.Services.Common;
-using PRN232.LMS.Services.Requests;
-using PRN232.LMS.Services.Responses;
+using PRN232.LMS.Services.BusinessModels;
+using PRN232.LMS.API.Requests;
+using PRN232.LMS.API.Responses;
 using PRN232.LMS.Services.Interfaces;
+
+using PRN232.LMS.API.Helpers;
 
 namespace PRN232.LMS.API.Controllers;
 
@@ -12,23 +16,19 @@ namespace PRN232.LMS.API.Controllers;
 public class StudentsController : ControllerBase
 {
     private readonly IStudentService _studentService;
+    private readonly IMapper _mapper;
 
-    public StudentsController(IStudentService studentService)
+    public StudentsController(IStudentService studentService, IMapper mapper)
     {
         _studentService = studentService;
+        _mapper = mapper;
     }
 
     /// <summary>
     /// Get all students with pagination, search, sorting, and field selection
     /// </summary>
-    /// <param name="search">Search by name or email</param>
-    /// <param name="sort">Sort field (prefix with - for descending)</param>
-    /// <param name="page">Page number (default: 1)</param>
-    /// <param name="size">Page size (default: 10)</param>
-    /// <param name="fields">Fields to include in response</param>
-    /// <param name="expand">Related data to include (e.g., enrollments)</param>
     [HttpGet]
-    [ProducesResponseType(typeof(PaginatedResponse<List<StudentResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PaginatedResponse<List<object>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search = null,
         [FromQuery] string? sort = null,
@@ -48,25 +48,36 @@ public class StudentsController : ControllerBase
         };
 
         var result = await _studentService.GetAllAsync(queryParams);
-        return Ok(result);
+        var responseData = _mapper.Map<List<StudentResponse>>(result.Data!.Data);
+        var shapedData = FieldHelper.ShapeDataList(responseData, fields);
+
+        var pagination = new PaginationMetadata
+        {
+            Page = result.Data.Page,
+            PageSize = result.Data.PageSize,
+            TotalItems = result.Data.TotalItems,
+            TotalPages = result.Data.TotalPages
+        };
+
+        return Ok(PaginatedResponse<List<object?>>.Ok(shapedData, pagination, result.Message));
     }
 
     /// <summary>
     /// Get a student by ID
     /// </summary>
-    /// <param name="id">Student ID</param>
-    /// <param name="expand">Related data to include (e.g., enrollments)</param>
     [HttpGet("{id}")]
     [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(int id, [FromQuery] string? expand = null)
     {
         var result = await _studentService.GetByIdAsync(id, expand);
-        if (!result.Success && result.Errors?.Contains("404") == true)
+        if (!result.Success)
         {
-            return NotFound(result);
+            return NotFound(ApiResponse<StudentResponse>.NotFound(result.Message));
         }
-        return Ok(result);
+
+        var responseData = _mapper.Map<StudentResponse>(result.Data);
+        return Ok(ApiResponse<StudentResponse>.Ok(responseData));
     }
 
     /// <summary>
@@ -77,12 +88,15 @@ public class StudentsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromBody] CreateStudentRequest request)
     {
-        var result = await _studentService.CreateAsync(request);
+        var studentBM = _mapper.Map<StudentBM>(request);
+        var result = await _studentService.CreateAsync(studentBM);
         if (!result.Success)
         {
-            return BadRequest(result);
+            return BadRequest(ApiResponse<StudentResponse>.BadRequest(result.Message));
         }
-        return CreatedAtAction(nameof(GetById), new { id = result.Data?.StudentId }, result);
+
+        var responseData = _mapper.Map<StudentResponse>(result.Data);
+        return CreatedAtAction(nameof(GetById), new { id = responseData.StudentId }, ApiResponse<StudentResponse>.Ok(responseData, result.Message));
     }
 
     /// <summary>
@@ -90,18 +104,21 @@ public class StudentsController : ControllerBase
     /// </summary>
     [HttpPut("{id}")]
     [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<StudentResponse>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateStudentRequest request)
     {
-        var result = await _studentService.UpdateAsync(id, request);
+        var studentBM = _mapper.Map<StudentBM>(request);
+        var result = await _studentService.UpdateAsync(id, studentBM);
         if (!result.Success)
         {
-            if (result.Errors?.Contains("404") == true)
-                return NotFound(result);
-            return BadRequest(result);
+            if (result.StatusCode == 404)
+                return NotFound(ApiResponse<StudentResponse>.NotFound(result.Message));
+            return BadRequest(ApiResponse<StudentResponse>.BadRequest(result.Message));
         }
-        return Ok(result);
+
+        var responseData = _mapper.Map<StudentResponse>(result.Data);
+        return Ok(ApiResponse<StudentResponse>.Ok(responseData, result.Message));
     }
 
     /// <summary>
@@ -115,8 +132,17 @@ public class StudentsController : ControllerBase
         var result = await _studentService.DeleteAsync(id);
         if (!result.Success)
         {
-            return NotFound(result);
+            return NotFound(ApiResponse<bool>.NotFound(result.Message));
         }
-        return Ok(result);
+        return Ok(ApiResponse<bool>.Ok(true, result.Message));
+    }
+
+    /// <summary>
+    /// Test endpoint to trigger a 500 Internal Server Error for global exception handling validation
+    /// </summary>
+    [HttpGet("test-500")]
+    public IActionResult Trigger500Error()
+    {
+        throw new Exception("Test global exception handling middleware - Simulated 500 Server Error");
     }
 }

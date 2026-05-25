@@ -1,8 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using AutoMapper;
 using PRN232.LMS.Services.Common;
-using PRN232.LMS.Services.Requests;
-using PRN232.LMS.Services.Responses;
+using PRN232.LMS.Services.BusinessModels;
+using PRN232.LMS.API.Requests;
+using PRN232.LMS.API.Responses;
 using PRN232.LMS.Services.Interfaces;
+
+using PRN232.LMS.API.Helpers;
 
 namespace PRN232.LMS.API.Controllers;
 
@@ -12,17 +16,19 @@ namespace PRN232.LMS.API.Controllers;
 public class SubjectsController : ControllerBase
 {
     private readonly ISubjectService _subjectService;
+    private readonly IMapper _mapper;
 
-    public SubjectsController(ISubjectService subjectService)
+    public SubjectsController(ISubjectService subjectService, IMapper mapper)
     {
         _subjectService = subjectService;
+        _mapper = mapper;
     }
 
     /// <summary>
     /// Get all subjects with pagination, search, sorting, and field selection
     /// </summary>
     [HttpGet]
-    [ProducesResponseType(typeof(PaginatedResponse<List<SubjectResponse>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(PaginatedResponse<List<object>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetAll(
         [FromQuery] string? search = null,
         [FromQuery] string? sort = null,
@@ -42,7 +48,18 @@ public class SubjectsController : ControllerBase
         };
 
         var result = await _subjectService.GetAllAsync(queryParams);
-        return Ok(result);
+        var responseData = _mapper.Map<List<SubjectResponse>>(result.Data!.Data);
+        var shapedData = FieldHelper.ShapeDataList(responseData, fields);
+
+        var pagination = new PaginationMetadata
+        {
+            Page = result.Data.Page,
+            PageSize = result.Data.PageSize,
+            TotalItems = result.Data.TotalItems,
+            TotalPages = result.Data.TotalPages
+        };
+
+        return Ok(PaginatedResponse<List<object?>>.Ok(shapedData, pagination, result.Message));
     }
 
     /// <summary>
@@ -54,11 +71,13 @@ public class SubjectsController : ControllerBase
     public async Task<IActionResult> GetById(int id)
     {
         var result = await _subjectService.GetByIdAsync(id);
-        if (!result.Success && result.Errors?.Contains("404") == true)
+        if (!result.Success)
         {
-            return NotFound(result);
+            return NotFound(ApiResponse<SubjectResponse>.NotFound(result.Message));
         }
-        return Ok(result);
+
+        var responseData = _mapper.Map<SubjectResponse>(result.Data);
+        return Ok(ApiResponse<SubjectResponse>.Ok(responseData));
     }
 
     /// <summary>
@@ -69,12 +88,15 @@ public class SubjectsController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create([FromBody] CreateSubjectRequest request)
     {
-        var result = await _subjectService.CreateAsync(request);
+        var subjectBM = _mapper.Map<SubjectBM>(request);
+        var result = await _subjectService.CreateAsync(subjectBM);
         if (!result.Success)
         {
-            return BadRequest(result);
+            return BadRequest(ApiResponse<SubjectResponse>.BadRequest(result.Message));
         }
-        return CreatedAtAction(nameof(GetById), new { id = result.Data?.SubjectId }, result);
+
+        var responseData = _mapper.Map<SubjectResponse>(result.Data);
+        return CreatedAtAction(nameof(GetById), new { id = responseData.SubjectId }, ApiResponse<SubjectResponse>.Ok(responseData, result.Message));
     }
 
     /// <summary>
@@ -82,18 +104,21 @@ public class SubjectsController : ControllerBase
     /// </summary>
     [HttpPut("{id}")]
     [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status200OK)]
-    [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<SubjectResponse>), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateSubjectRequest request)
     {
-        var result = await _subjectService.UpdateAsync(id, request);
+        var subjectBM = _mapper.Map<SubjectBM>(request);
+        var result = await _subjectService.UpdateAsync(id, subjectBM);
         if (!result.Success)
         {
-            if (result.Errors?.Contains("404") == true)
-                return NotFound(result);
-            return BadRequest(result);
+            if (result.StatusCode == 404)
+                return NotFound(ApiResponse<SubjectResponse>.NotFound(result.Message));
+            return BadRequest(ApiResponse<SubjectResponse>.BadRequest(result.Message));
         }
-        return Ok(result);
+
+        var responseData = _mapper.Map<SubjectResponse>(result.Data);
+        return Ok(ApiResponse<SubjectResponse>.Ok(responseData, result.Message));
     }
 
     /// <summary>
@@ -107,8 +132,8 @@ public class SubjectsController : ControllerBase
         var result = await _subjectService.DeleteAsync(id);
         if (!result.Success)
         {
-            return NotFound(result);
+            return NotFound(ApiResponse<bool>.NotFound(result.Message));
         }
-        return Ok(result);
+        return Ok(ApiResponse<bool>.Ok(true, result.Message));
     }
 }

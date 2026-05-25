@@ -1,4 +1,4 @@
-namespace PRN232.LMS.Services.Responses;
+namespace PRN232.LMS.API.Responses;
 
 public class ApiResponse<T>
 {
@@ -6,14 +6,38 @@ public class ApiResponse<T>
     public string Message { get; set; } = string.Empty;
     public T? Data { get; set; }
     public List<string>? Errors { get; set; }
+    public int StatusCode { get; set; } = 200;
 
     public static ApiResponse<T> Ok(T data, string message = "Request processed successfully")
     {
         return new ApiResponse<T>
         {
             Success = true,
+            StatusCode = 200,
             Message = message,
             Data = data
+        };
+    }
+
+    public static ApiResponse<T> NotFound(string message, List<string>? errors = null)
+    {
+        return new ApiResponse<T>
+        {
+            Success = false,
+            StatusCode = 404,
+            Message = message,
+            Errors = errors
+        };
+    }
+
+    public static ApiResponse<T> BadRequest(string message, List<string>? errors = null)
+    {
+        return new ApiResponse<T>
+        {
+            Success = false,
+            StatusCode = 400,
+            Message = message,
+            Errors = errors
         };
     }
 
@@ -22,6 +46,7 @@ public class ApiResponse<T>
         return new ApiResponse<T>
         {
             Success = false,
+            StatusCode = 500,
             Message = message,
             Errors = errors
         };
@@ -34,6 +59,7 @@ public class PaginatedResponse<T>
     public string Message { get; set; } = string.Empty;
     public T? Data { get; set; }
     public List<string>? Errors { get; set; }
+    public int StatusCode { get; set; } = 200;
     public PaginationMetadata Pagination { get; set; } = new();
 
     public static PaginatedResponse<T> Ok(T data, PaginationMetadata pagination, string message = "Request processed successfully")
@@ -41,6 +67,7 @@ public class PaginatedResponse<T>
         return new PaginatedResponse<T>
         {
             Success = true,
+            StatusCode = 200,
             Message = message,
             Data = data,
             Pagination = pagination
@@ -62,6 +89,7 @@ public class SemesterResponse
     public string SemesterName { get; set; } = string.Empty;
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
+    public List<CourseResponse>? Courses { get; set; }
 }
 
 public class CourseResponse
@@ -70,6 +98,7 @@ public class CourseResponse
     public string CourseName { get; set; } = string.Empty;
     public int SemesterId { get; set; }
     public string? SemesterName { get; set; }
+    public List<EnrollmentResponse>? Enrollments { get; set; }
 }
 
 public class StudentResponse
@@ -78,6 +107,7 @@ public class StudentResponse
     public string FullName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public DateTime DateOfBirth { get; set; }
+    public List<EnrollmentResponse>? Enrollments { get; set; }
 }
 
 public class EnrollmentResponse
