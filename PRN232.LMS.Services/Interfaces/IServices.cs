@@ -1,51 +1,50 @@
 using PRN232.LMS.Services.BusinessModels;
 using PRN232.LMS.Services.Common;
-using PRN232.LMS.Services.Requests;
-using PRN232.LMS.Services.Responses;
 
 namespace PRN232.LMS.Services.Interfaces;
 
 public interface ISemesterService
 {
-    Task<PaginatedResponse<List<SemesterResponse>>> GetAllAsync(QueryParams queryParams);
-    Task<ApiResponse<SemesterResponse>> GetByIdAsync(int id);
-    Task<ApiResponse<SemesterResponse>> CreateAsync(CreateSemesterRequest request);
-    Task<ApiResponse<SemesterResponse>> UpdateAsync(int id, UpdateSemesterRequest request);
-    Task<ApiResponse<bool>> DeleteAsync(int id);
+    Task<ServiceResult<PagedResult<List<SemesterBM>>>> GetAllAsync(QueryParams queryParams);
+    Task<ServiceResult<SemesterBM>> GetByIdAsync(int id, string? expand = null);
+    Task<ServiceResult<SemesterBM>> CreateAsync(SemesterBM request);
+    Task<ServiceResult<SemesterBM>> UpdateAsync(int id, SemesterBM request);
+    Task<ServiceResult<bool>> DeleteAsync(int id);
 }
 
 public interface ICourseService
 {
-    Task<PaginatedResponse<List<CourseResponse>>> GetAllAsync(QueryParams queryParams);
-    Task<ApiResponse<CourseResponse>> GetByIdAsync(int id, string? expand = null);
-    Task<ApiResponse<CourseResponse>> CreateAsync(CreateCourseRequest request);
-    Task<ApiResponse<CourseResponse>> UpdateAsync(int id, UpdateCourseRequest request);
-    Task<ApiResponse<bool>> DeleteAsync(int id);
+    Task<ServiceResult<PagedResult<List<CourseBM>>>> GetAllAsync(QueryParams queryParams);
+    Task<ServiceResult<CourseBM>> GetByIdAsync(int id, string? expand = null);
+    Task<ServiceResult<CourseBM>> CreateAsync(CourseBM request);
+    Task<ServiceResult<CourseBM>> UpdateAsync(int id, CourseBM request);
+    Task<ServiceResult<bool>> DeleteAsync(int id);
 }
 
 public interface IStudentService
 {
-    Task<PaginatedResponse<List<StudentResponse>>> GetAllAsync(QueryParams queryParams);
-    Task<ApiResponse<StudentResponse>> GetByIdAsync(int id, string? expand = null);
-    Task<ApiResponse<StudentResponse>> CreateAsync(CreateStudentRequest request);
-    Task<ApiResponse<StudentResponse>> UpdateAsync(int id, UpdateStudentRequest request);
-    Task<ApiResponse<bool>> DeleteAsync(int id);
+    Task<ServiceResult<PagedResult<List<StudentBM>>>> GetAllAsync(QueryParams queryParams);
+    Task<ServiceResult<StudentBM>> GetByIdAsync(int id, string? expand = null);
+    Task<ServiceResult<StudentBM>> CreateAsync(StudentBM request);
+    Task<ServiceResult<StudentBM>> UpdateAsync(int id, StudentBM request);
+    Task<ServiceResult<bool>> DeleteAsync(int id);
 }
 
 public interface IEnrollmentService
 {
-    Task<PaginatedResponse<List<EnrollmentResponse>>> GetAllAsync(QueryParams queryParams);
-    Task<ApiResponse<EnrollmentResponse>> GetByIdAsync(int id, string? expand = null);
-    Task<ApiResponse<EnrollmentResponse>> CreateAsync(CreateEnrollmentRequest request);
-    Task<ApiResponse<EnrollmentResponse>> UpdateAsync(int id, UpdateEnrollmentRequest request);
-    Task<ApiResponse<bool>> DeleteAsync(int id);
+    Task<ServiceResult<PagedResult<List<EnrollmentBM>>>> GetAllAsync(QueryParams queryParams);
+    Task<ServiceResult<PagedResult<List<EnrollmentBM>>>> GetByCourseIdAsync(int courseId, int page, int size);
+    Task<ServiceResult<EnrollmentBM>> GetByIdAsync(int id, string? expand = null);
+    Task<ServiceResult<EnrollmentBM>> CreateAsync(EnrollmentBM request);
+    Task<ServiceResult<EnrollmentBM>> UpdateAsync(int id, EnrollmentBM request);
+    Task<ServiceResult<bool>> DeleteAsync(int id);
 }
 
 public interface ISubjectService
 {
-    Task<PaginatedResponse<List<SubjectResponse>>> GetAllAsync(QueryParams queryParams);
-    Task<ApiResponse<SubjectResponse>> GetByIdAsync(int id);
-    Task<ApiResponse<SubjectResponse>> CreateAsync(CreateSubjectRequest request);
-    Task<ApiResponse<SubjectResponse>> UpdateAsync(int id, UpdateSubjectRequest request);
-    Task<ApiResponse<bool>> DeleteAsync(int id);
+    Task<ServiceResult<PagedResult<List<SubjectBM>>>> GetAllAsync(QueryParams queryParams);
+    Task<ServiceResult<SubjectBM>> GetByIdAsync(int id);
+    Task<ServiceResult<SubjectBM>> CreateAsync(SubjectBM request);
+    Task<ServiceResult<SubjectBM>> UpdateAsync(int id, SubjectBM request);
+    Task<ServiceResult<bool>> DeleteAsync(int id);
 }

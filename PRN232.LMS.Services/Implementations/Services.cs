@@ -3,8 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using PRN232.LMS.Services.BusinessModels;
 using PRN232.LMS.Services.Common;
 using PRN232.LMS.Repositories.Entities;
-using PRN232.LMS.Services.Requests;
-using PRN232.LMS.Services.Responses;
 using PRN232.LMS.Repositories.Interfaces;
 using PRN232.LMS.Services.Interfaces;
 using System.Linq.Dynamic.Core;
@@ -40,32 +38,6 @@ internal static class QueryHelper
 
         return string.Join(", ", expressions);
     }
-
-    /// <summary>
-    /// Select specific fields from a list of objects (case-insensitive field matching)
-    /// </summary>
-    public static List<T> SelectFields<T>(List<T> data, string fields) where T : class, new()
-    {
-        var fieldList = fields.Split(',').Select(f => f.Trim()).ToList();
-        var result = new List<T>();
-
-        foreach (var item in data)
-        {
-            var newItem = new T();
-            foreach (var field in fieldList)
-            {
-                var property = typeof(T).GetProperty(field, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
-                if (property != null && property.CanWrite)
-                {
-                    var value = property.GetValue(item);
-                    property.SetValue(newItem, value);
-                }
-            }
-            result.Add(newItem);
-        }
-
-        return result;
-    }
 }
 
 public class SemesterService : ISemesterService
@@ -79,7 +51,7 @@ public class SemesterService : ISemesterService
         _mapper = mapper;
     }
 
-    public async Task<PaginatedResponse<List<SemesterResponse>>> GetAllAsync(QueryParams queryParams)
+    public async Task<ServiceResult<Common.PagedResult<List<SemesterBM>>>> GetAllAsync(QueryParams queryParams)
     {
         var query = _repository.GetAllQueryable();
 
@@ -100,7 +72,7 @@ public class SemesterService : ISemesterService
         }
 
         // Pagination
-        var totalItems = query.Count();
+        var totalItems = await query.CountAsync();
         var totalPages = (int)Math.Ceiling((double)totalItems / queryParams.Size);
 
         // Expansion
@@ -116,59 +88,73 @@ public class SemesterService : ISemesterService
             .Take(queryParams.Size)
             .ToListAsync();
 
-        var response = _mapper.Map<List<SemesterResponse>>(data);
+        var businessModels = _mapper.Map<List<SemesterBM>>(data);
 
-        // Field selection
-        if (!string.IsNullOrWhiteSpace(queryParams.Fields))
+        var pagedResult = new Common.PagedResult<List<SemesterBM>>
         {
-            response = QueryHelper.SelectFields(response, queryParams.Fields);
+            Data = businessModels,
+            Page = queryParams.Page,
+            PageSize = queryParams.Size,
+            TotalItems = totalItems,
+            TotalPages = totalPages
+        };
+
+        return ServiceResult<Common.PagedResult<List<SemesterBM>>>.Ok(pagedResult);
+    }
+
+    public async Task<ServiceResult<SemesterBM>> GetByIdAsync(int id, string? expand = null)
+    {
+        Semester? entity = null;
+
+        if (!string.IsNullOrWhiteSpace(expand))
+        {
+            var expands = expand.Split(',').Select(e => e.Trim().ToLower());
+            if (expands.Contains("courses"))
+                entity = await _repository.GetByIdWithCoursesAsync(id);
         }
 
-        return PaginatedResponse<List<SemesterResponse>>.Ok(response,
-            new PaginationMetadata { Page = queryParams.Page, PageSize = queryParams.Size, TotalItems = totalItems, TotalPages = totalPages });
-    }
+        entity ??= await _repository.GetByIdAsync(id);
 
-    public async Task<ApiResponse<SemesterResponse>> GetByIdAsync(int id)
-    {
-        var entity = await _repository.GetByIdWithCoursesAsync(id);
         if (entity == null)
-            return ApiResponse<SemesterResponse>.Fail("Semester not found", new List<string> { "404" });
+            return ServiceResult<SemesterBM>.NotFound("Semester not found");
 
-        var response = _mapper.Map<SemesterResponse>(entity);
-        return ApiResponse<SemesterResponse>.Ok(response);
+        var businessModel = _mapper.Map<SemesterBM>(entity);
+        return ServiceResult<SemesterBM>.Ok(businessModel);
     }
 
-    public async Task<ApiResponse<SemesterResponse>> CreateAsync(CreateSemesterRequest request)
+    public async Task<ServiceResult<SemesterBM>> CreateAsync(SemesterBM request)
     {
         var entity = _mapper.Map<Semester>(request);
         await _repository.AddAsync(entity);
-        var response = _mapper.Map<SemesterResponse>(entity);
-        return ApiResponse<SemesterResponse>.Ok(response, "Semester created successfully");
+
+        var resultBM = _mapper.Map<SemesterBM>(entity);
+        return ServiceResult<SemesterBM>.Ok(resultBM, "Semester created successfully");
     }
 
-    public async Task<ApiResponse<SemesterResponse>> UpdateAsync(int id, UpdateSemesterRequest request)
+    public async Task<ServiceResult<SemesterBM>> UpdateAsync(int id, SemesterBM request)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<SemesterResponse>.Fail("Semester not found", new List<string> { "404" });
+            return ServiceResult<SemesterBM>.NotFound("Semester not found");
 
         entity.SemesterName = request.SemesterName;
         entity.StartDate = request.StartDate;
         entity.EndDate = request.EndDate;
 
         await _repository.UpdateAsync(entity);
-        var response = _mapper.Map<SemesterResponse>(entity);
-        return ApiResponse<SemesterResponse>.Ok(response, "Semester updated successfully");
+
+        var resultBM = _mapper.Map<SemesterBM>(entity);
+        return ServiceResult<SemesterBM>.Ok(resultBM, "Semester updated successfully");
     }
 
-    public async Task<ApiResponse<bool>> DeleteAsync(int id)
+    public async Task<ServiceResult<bool>> DeleteAsync(int id)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<bool>.Fail("Semester not found", new List<string> { "404" });
+            return ServiceResult<bool>.NotFound("Semester not found");
 
         await _repository.DeleteAsync(id);
-        return ApiResponse<bool>.Ok(true, "Semester deleted successfully");
+        return ServiceResult<bool>.Ok(true, "Semester deleted successfully");
     }
 }
 
@@ -183,7 +169,7 @@ public class CourseService : ICourseService
         _mapper = mapper;
     }
 
-    public async Task<PaginatedResponse<List<CourseResponse>>> GetAllAsync(QueryParams queryParams)
+    public async Task<ServiceResult<Common.PagedResult<List<CourseBM>>>> GetAllAsync(QueryParams queryParams)
     {
         var query = _repository.GetAllQueryable();
 
@@ -203,7 +189,7 @@ public class CourseService : ICourseService
             query = query.OrderBy(c => c.CourseId);
         }
 
-        var totalItems = query.Count();
+        var totalItems = await query.CountAsync();
         var totalPages = (int)Math.Ceiling((double)totalItems / queryParams.Size);
 
         // Expansion
@@ -225,67 +211,74 @@ public class CourseService : ICourseService
             .Take(queryParams.Size)
             .ToListAsync();
 
-        var response = _mapper.Map<List<CourseResponse>>(data);
+        var businessModels = _mapper.Map<List<CourseBM>>(data);
 
-        if (!string.IsNullOrWhiteSpace(queryParams.Fields))
+        var pagedResult = new Common.PagedResult<List<CourseBM>>
         {
-            response = QueryHelper.SelectFields(response, queryParams.Fields);
-        }
+            Data = businessModels,
+            Page = queryParams.Page,
+            PageSize = queryParams.Size,
+            TotalItems = totalItems,
+            TotalPages = totalPages
+        };
 
-        return PaginatedResponse<List<CourseResponse>>.Ok(response,
-            new PaginationMetadata { Page = queryParams.Page, PageSize = queryParams.Size, TotalItems = totalItems, TotalPages = totalPages });
+        return ServiceResult<Common.PagedResult<List<CourseBM>>>.Ok(pagedResult);
     }
 
-    public async Task<ApiResponse<CourseResponse>> GetByIdAsync(int id, string? expand = null)
+    public async Task<ServiceResult<CourseBM>> GetByIdAsync(int id, string? expand = null)
     {
         Course? entity = null;
 
-        if (expand?.Contains("semester") == true)
+        if (!string.IsNullOrWhiteSpace(expand))
         {
-            entity = await _repository.GetByIdWithSemesterAsync(id);
+            var expands = expand.Split(',').Select(e => e.Trim().ToLower());
+            if (expands.Contains("enrollments"))
+                entity = await _repository.GetByIdWithEnrollmentsAsync(id);
+            else if (expands.Contains("semester"))
+                entity = await _repository.GetByIdWithSemesterAsync(id);
         }
-        else
-        {
-            entity = await _repository.GetByIdAsync(id);
-        }
+
+        entity ??= await _repository.GetByIdAsync(id);
 
         if (entity == null)
-            return ApiResponse<CourseResponse>.Fail("Course not found", new List<string> { "404" });
+            return ServiceResult<CourseBM>.NotFound("Course not found");
 
-        var response = _mapper.Map<CourseResponse>(entity);
-        return ApiResponse<CourseResponse>.Ok(response);
+        var businessModel = _mapper.Map<CourseBM>(entity);
+        return ServiceResult<CourseBM>.Ok(businessModel);
     }
 
-    public async Task<ApiResponse<CourseResponse>> CreateAsync(CreateCourseRequest request)
+    public async Task<ServiceResult<CourseBM>> CreateAsync(CourseBM request)
     {
         var entity = _mapper.Map<Course>(request);
         await _repository.AddAsync(entity);
-        var response = _mapper.Map<CourseResponse>(entity);
-        return ApiResponse<CourseResponse>.Ok(response, "Course created successfully");
+
+        var resultBM = _mapper.Map<CourseBM>(entity);
+        return ServiceResult<CourseBM>.Ok(resultBM, "Course created successfully");
     }
 
-    public async Task<ApiResponse<CourseResponse>> UpdateAsync(int id, UpdateCourseRequest request)
+    public async Task<ServiceResult<CourseBM>> UpdateAsync(int id, CourseBM request)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<CourseResponse>.Fail("Course not found", new List<string> { "404" });
+            return ServiceResult<CourseBM>.NotFound("Course not found");
 
         entity.CourseName = request.CourseName;
         entity.SemesterId = request.SemesterId;
 
         await _repository.UpdateAsync(entity);
-        var response = _mapper.Map<CourseResponse>(entity);
-        return ApiResponse<CourseResponse>.Ok(response, "Course updated successfully");
+
+        var resultBM = _mapper.Map<CourseBM>(entity);
+        return ServiceResult<CourseBM>.Ok(resultBM, "Course updated successfully");
     }
 
-    public async Task<ApiResponse<bool>> DeleteAsync(int id)
+    public async Task<ServiceResult<bool>> DeleteAsync(int id)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<bool>.Fail("Course not found", new List<string> { "404" });
+            return ServiceResult<bool>.NotFound("Course not found");
 
         await _repository.DeleteAsync(id);
-        return ApiResponse<bool>.Ok(true, "Course deleted successfully");
+        return ServiceResult<bool>.Ok(true, "Course deleted successfully");
     }
 }
 
@@ -300,7 +293,7 @@ public class StudentService : IStudentService
         _mapper = mapper;
     }
 
-    public async Task<PaginatedResponse<List<StudentResponse>>> GetAllAsync(QueryParams queryParams)
+    public async Task<ServiceResult<Common.PagedResult<List<StudentBM>>>> GetAllAsync(QueryParams queryParams)
     {
         var query = _repository.GetAllQueryable();
 
@@ -318,7 +311,7 @@ public class StudentService : IStudentService
             query = query.OrderBy(s => s.StudentId);
         }
 
-        var totalItems = query.Count();
+        var totalItems = await query.CountAsync();
         var totalPages = (int)Math.Ceiling((double)totalItems / queryParams.Size);
 
         // Expansion
@@ -334,18 +327,21 @@ public class StudentService : IStudentService
             .Take(queryParams.Size)
             .ToListAsync();
 
-        var response = _mapper.Map<List<StudentResponse>>(data);
+        var businessModels = _mapper.Map<List<StudentBM>>(data);
 
-        if (!string.IsNullOrWhiteSpace(queryParams.Fields))
+        var pagedResult = new Common.PagedResult<List<StudentBM>>
         {
-            response = QueryHelper.SelectFields(response, queryParams.Fields);
-        }
+            Data = businessModels,
+            Page = queryParams.Page,
+            PageSize = queryParams.Size,
+            TotalItems = totalItems,
+            TotalPages = totalPages
+        };
 
-        return PaginatedResponse<List<StudentResponse>>.Ok(response,
-            new PaginationMetadata { Page = queryParams.Page, PageSize = queryParams.Size, TotalItems = totalItems, TotalPages = totalPages });
+        return ServiceResult<Common.PagedResult<List<StudentBM>>>.Ok(pagedResult);
     }
 
-    public async Task<ApiResponse<StudentResponse>> GetByIdAsync(int id, string? expand = null)
+    public async Task<ServiceResult<StudentBM>> GetByIdAsync(int id, string? expand = null)
     {
         Student? entity = null;
 
@@ -359,34 +355,35 @@ public class StudentService : IStudentService
         }
 
         if (entity == null)
-            return ApiResponse<StudentResponse>.Fail("Student not found", new List<string> { "404" });
+            return ServiceResult<StudentBM>.NotFound("Student not found");
 
-        var response = _mapper.Map<StudentResponse>(entity);
-        return ApiResponse<StudentResponse>.Ok(response);
+        var businessModel = _mapper.Map<StudentBM>(entity);
+        return ServiceResult<StudentBM>.Ok(businessModel);
     }
 
-    public async Task<ApiResponse<StudentResponse>> CreateAsync(CreateStudentRequest request)
+    public async Task<ServiceResult<StudentBM>> CreateAsync(StudentBM request)
     {
         if (await _repository.ExistsByEmailAsync(request.Email))
         {
-            return ApiResponse<StudentResponse>.Fail("Email already exists", new List<string> { "400" });
+            return ServiceResult<StudentBM>.BadRequest("Email already exists");
         }
 
         var entity = _mapper.Map<Student>(request);
         await _repository.AddAsync(entity);
-        var response = _mapper.Map<StudentResponse>(entity);
-        return ApiResponse<StudentResponse>.Ok(response, "Student created successfully");
+
+        var resultBM = _mapper.Map<StudentBM>(entity);
+        return ServiceResult<StudentBM>.Ok(resultBM, "Student created successfully");
     }
 
-    public async Task<ApiResponse<StudentResponse>> UpdateAsync(int id, UpdateStudentRequest request)
+    public async Task<ServiceResult<StudentBM>> UpdateAsync(int id, StudentBM request)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<StudentResponse>.Fail("Student not found", new List<string> { "404" });
+            return ServiceResult<StudentBM>.NotFound("Student not found");
 
         if (await _repository.ExistsByEmailAsync(request.Email, id))
         {
-            return ApiResponse<StudentResponse>.Fail("Email already exists", new List<string> { "400" });
+            return ServiceResult<StudentBM>.BadRequest("Email already exists");
         }
 
         entity.FullName = request.FullName;
@@ -394,18 +391,19 @@ public class StudentService : IStudentService
         entity.DateOfBirth = request.DateOfBirth;
 
         await _repository.UpdateAsync(entity);
-        var response = _mapper.Map<StudentResponse>(entity);
-        return ApiResponse<StudentResponse>.Ok(response, "Student updated successfully");
+
+        var resultBM = _mapper.Map<StudentBM>(entity);
+        return ServiceResult<StudentBM>.Ok(resultBM, "Student updated successfully");
     }
 
-    public async Task<ApiResponse<bool>> DeleteAsync(int id)
+    public async Task<ServiceResult<bool>> DeleteAsync(int id)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<bool>.Fail("Student not found", new List<string> { "404" });
+            return ServiceResult<bool>.NotFound("Student not found");
 
         await _repository.DeleteAsync(id);
-        return ApiResponse<bool>.Ok(true, "Student deleted successfully");
+        return ServiceResult<bool>.Ok(true, "Student deleted successfully");
     }
 }
 
@@ -420,7 +418,7 @@ public class EnrollmentService : IEnrollmentService
         _mapper = mapper;
     }
 
-    public async Task<PaginatedResponse<List<EnrollmentResponse>>> GetAllAsync(QueryParams queryParams)
+    public async Task<ServiceResult<Common.PagedResult<List<EnrollmentBM>>>> GetAllAsync(QueryParams queryParams)
     {
         var query = _repository.GetAllQueryable();
 
@@ -440,7 +438,7 @@ public class EnrollmentService : IEnrollmentService
             query = query.OrderBy(e => e.EnrollmentId);
         }
 
-        var totalItems = query.Count();
+        var totalItems = await query.CountAsync();
         var totalPages = (int)Math.Ceiling((double)totalItems / queryParams.Size);
 
         // Expansion
@@ -458,49 +456,93 @@ public class EnrollmentService : IEnrollmentService
             .Take(queryParams.Size)
             .ToListAsync();
 
-        var response = _mapper.Map<List<EnrollmentResponse>>(data);
+        var businessModels = _mapper.Map<List<EnrollmentBM>>(data);
 
-        if (!string.IsNullOrWhiteSpace(queryParams.Fields))
+        var pagedResult = new Common.PagedResult<List<EnrollmentBM>>
         {
-            response = QueryHelper.SelectFields(response, queryParams.Fields);
+            Data = businessModels,
+            Page = queryParams.Page,
+            PageSize = queryParams.Size,
+            TotalItems = totalItems,
+            TotalPages = totalPages
+        };
+
+        return ServiceResult<Common.PagedResult<List<EnrollmentBM>>>.Ok(pagedResult);
+    }
+
+    public async Task<ServiceResult<Common.PagedResult<List<EnrollmentBM>>>> GetByCourseIdAsync(int courseId, int page, int size)
+    {
+        var query = _repository.GetAllQueryable()
+            .Include(e => e.Student)
+            .Include(e => e.Course)
+            .Where(e => e.CourseId == courseId);
+
+        var totalItems = await query.CountAsync();
+        var totalPages = (int)Math.Ceiling((double)totalItems / size);
+
+        var data = await query
+            .OrderBy(e => e.EnrollmentId)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .ToListAsync();
+
+        var businessModels = _mapper.Map<List<EnrollmentBM>>(data);
+
+        var pagedResult = new Common.PagedResult<List<EnrollmentBM>>
+        {
+            Data = businessModels,
+            Page = page,
+            PageSize = size,
+            TotalItems = totalItems,
+            TotalPages = totalPages
+        };
+
+        return ServiceResult<Common.PagedResult<List<EnrollmentBM>>>.Ok(pagedResult);
+    }
+
+    public async Task<ServiceResult<EnrollmentBM>> GetByIdAsync(int id, string? expand = null)
+    {
+        Enrollment? entity = null;
+
+        if (!string.IsNullOrWhiteSpace(expand))
+        {
+            var expands = expand.Split(',').Select(e => e.Trim().ToLower());
+            if (expands.Contains("student") || expands.Contains("course"))
+                entity = await _repository.GetByIdWithDetailsAsync(id);
         }
 
-        return PaginatedResponse<List<EnrollmentResponse>>.Ok(response,
-            new PaginationMetadata { Page = queryParams.Page, PageSize = queryParams.Size, TotalItems = totalItems, TotalPages = totalPages });
-    }
+        entity ??= await _repository.GetByIdAsync(id);
 
-    public async Task<ApiResponse<EnrollmentResponse>> GetByIdAsync(int id, string? expand = null)
-    {
-        var entity = await _repository.GetByIdWithDetailsAsync(id);
         if (entity == null)
-            return ApiResponse<EnrollmentResponse>.Fail("Enrollment not found", new List<string> { "404" });
+            return ServiceResult<EnrollmentBM>.NotFound("Enrollment not found");
 
-        var response = _mapper.Map<EnrollmentResponse>(entity);
-        return ApiResponse<EnrollmentResponse>.Ok(response);
+        var businessModel = _mapper.Map<EnrollmentBM>(entity);
+        return ServiceResult<EnrollmentBM>.Ok(businessModel);
     }
 
-    public async Task<ApiResponse<EnrollmentResponse>> CreateAsync(CreateEnrollmentRequest request)
+    public async Task<ServiceResult<EnrollmentBM>> CreateAsync(EnrollmentBM request)
     {
         if (await _repository.ExistsByStudentAndCourseAsync(request.StudentId, request.CourseId))
         {
-            return ApiResponse<EnrollmentResponse>.Fail("Student already enrolled in this course", new List<string> { "400" });
+            return ServiceResult<EnrollmentBM>.BadRequest("Student already enrolled in this course");
         }
 
         var entity = _mapper.Map<Enrollment>(request);
         await _repository.AddAsync(entity);
-        var response = _mapper.Map<EnrollmentResponse>(entity);
-        return ApiResponse<EnrollmentResponse>.Ok(response, "Enrollment created successfully");
+
+        var resultBM = _mapper.Map<EnrollmentBM>(entity);
+        return ServiceResult<EnrollmentBM>.Ok(resultBM, "Enrollment created successfully");
     }
 
-    public async Task<ApiResponse<EnrollmentResponse>> UpdateAsync(int id, UpdateEnrollmentRequest request)
+    public async Task<ServiceResult<EnrollmentBM>> UpdateAsync(int id, EnrollmentBM request)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<EnrollmentResponse>.Fail("Enrollment not found", new List<string> { "404" });
+            return ServiceResult<EnrollmentBM>.NotFound("Enrollment not found");
 
         if (await _repository.ExistsByStudentAndCourseAsync(request.StudentId, request.CourseId, id))
         {
-            return ApiResponse<EnrollmentResponse>.Fail("Student already enrolled in this course", new List<string> { "400" });
+            return ServiceResult<EnrollmentBM>.BadRequest("Student already enrolled in this course");
         }
 
         entity.StudentId = request.StudentId;
@@ -509,18 +551,19 @@ public class EnrollmentService : IEnrollmentService
         entity.Status = request.Status;
 
         await _repository.UpdateAsync(entity);
-        var response = _mapper.Map<EnrollmentResponse>(entity);
-        return ApiResponse<EnrollmentResponse>.Ok(response, "Enrollment updated successfully");
+
+        var resultBM = _mapper.Map<EnrollmentBM>(entity);
+        return ServiceResult<EnrollmentBM>.Ok(resultBM, "Enrollment updated successfully");
     }
 
-    public async Task<ApiResponse<bool>> DeleteAsync(int id)
+    public async Task<ServiceResult<bool>> DeleteAsync(int id)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<bool>.Fail("Enrollment not found", new List<string> { "404" });
+            return ServiceResult<bool>.NotFound("Enrollment not found");
 
         await _repository.DeleteAsync(id);
-        return ApiResponse<bool>.Ok(true, "Enrollment deleted successfully");
+        return ServiceResult<bool>.Ok(true, "Enrollment deleted successfully");
     }
 }
 
@@ -535,7 +578,7 @@ public class SubjectService : ISubjectService
         _mapper = mapper;
     }
 
-    public async Task<PaginatedResponse<List<SubjectResponse>>> GetAllAsync(QueryParams queryParams)
+    public async Task<ServiceResult<Common.PagedResult<List<SubjectBM>>>> GetAllAsync(QueryParams queryParams)
     {
         var query = _repository.GetAllQueryable();
 
@@ -554,56 +597,60 @@ public class SubjectService : ISubjectService
             query = query.OrderBy(s => s.SubjectCode);
         }
 
-        var totalItems = query.Count();
+        var totalItems = await query.CountAsync();
         var totalPages = (int)Math.Ceiling((double)totalItems / queryParams.Size);
         var data = await query
             .Skip((queryParams.Page - 1) * queryParams.Size)
             .Take(queryParams.Size)
             .ToListAsync();
 
-        var response = _mapper.Map<List<SubjectResponse>>(data);
+        var businessModels = _mapper.Map<List<SubjectBM>>(data);
 
-        if (!string.IsNullOrWhiteSpace(queryParams.Fields))
+        var pagedResult = new Common.PagedResult<List<SubjectBM>>
         {
-            response = QueryHelper.SelectFields(response, queryParams.Fields);
-        }
+            Data = businessModels,
+            Page = queryParams.Page,
+            PageSize = queryParams.Size,
+            TotalItems = totalItems,
+            TotalPages = totalPages
+        };
 
-        return PaginatedResponse<List<SubjectResponse>>.Ok(response,
-            new PaginationMetadata { Page = queryParams.Page, PageSize = queryParams.Size, TotalItems = totalItems, TotalPages = totalPages });
+        return ServiceResult<Common.PagedResult<List<SubjectBM>>>.Ok(pagedResult);
     }
 
-    public async Task<ApiResponse<SubjectResponse>> GetByIdAsync(int id)
+    public async Task<ServiceResult<SubjectBM>> GetByIdAsync(int id)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<SubjectResponse>.Fail("Subject not found", new List<string> { "404" });
+            return ServiceResult<SubjectBM>.NotFound("Subject not found");
 
-        var response = _mapper.Map<SubjectResponse>(entity);
-        return ApiResponse<SubjectResponse>.Ok(response);
+        var businessModel = _mapper.Map<SubjectBM>(entity);
+        return ServiceResult<SubjectBM>.Ok(businessModel);
     }
 
-    public async Task<ApiResponse<SubjectResponse>> CreateAsync(CreateSubjectRequest request)
+    public async Task<ServiceResult<SubjectBM>> CreateAsync(SubjectBM request)
     {
         if (await _repository.ExistsByCodeAsync(request.SubjectCode))
         {
-            return ApiResponse<SubjectResponse>.Fail("Subject code already exists", new List<string> { "400" });
+            return ServiceResult<SubjectBM>.BadRequest("Subject code already exists");
         }
 
         var entity = _mapper.Map<Subject>(request);
         await _repository.AddAsync(entity);
-        var response = _mapper.Map<SubjectResponse>(entity);
-        return ApiResponse<SubjectResponse>.Ok(response, "Subject created successfully");
+
+        var resultBM = _mapper.Map<SubjectBM>(entity);
+        return ServiceResult<SubjectBM>.Ok(resultBM, "Subject created successfully");
     }
 
-    public async Task<ApiResponse<SubjectResponse>> UpdateAsync(int id, UpdateSubjectRequest request)
+    public async Task<ServiceResult<SubjectBM>> UpdateAsync(int id, SubjectBM request)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<SubjectResponse>.Fail("Subject not found", new List<string> { "404" });
+            return ServiceResult<SubjectBM>.NotFound("Subject not found");
 
         if (await _repository.ExistsByCodeAsync(request.SubjectCode, id))
         {
-            return ApiResponse<SubjectResponse>.Fail("Subject code already exists", new List<string> { "400" });
+            return ServiceResult<SubjectBM>.BadRequest("Subject code already exists");
         }
 
         entity.SubjectCode = request.SubjectCode;
@@ -611,17 +658,18 @@ public class SubjectService : ISubjectService
         entity.Credit = request.Credit;
 
         await _repository.UpdateAsync(entity);
-        var response = _mapper.Map<SubjectResponse>(entity);
-        return ApiResponse<SubjectResponse>.Ok(response, "Subject updated successfully");
+
+        var resultBM = _mapper.Map<SubjectBM>(entity);
+        return ServiceResult<SubjectBM>.Ok(resultBM, "Subject updated successfully");
     }
 
-    public async Task<ApiResponse<bool>> DeleteAsync(int id)
+    public async Task<ServiceResult<bool>> DeleteAsync(int id)
     {
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
-            return ApiResponse<bool>.Fail("Subject not found", new List<string> { "404" });
+            return ServiceResult<bool>.NotFound("Subject not found");
 
         await _repository.DeleteAsync(id);
-        return ApiResponse<bool>.Ok(true, "Subject deleted successfully");
+        return ServiceResult<bool>.Ok(true, "Subject deleted successfully");
     }
 }

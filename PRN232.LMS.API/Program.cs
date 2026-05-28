@@ -33,8 +33,15 @@ builder.Services.AddScoped<IStudentService, StudentService>();
 builder.Services.AddScoped<IEnrollmentService, EnrollmentService>();
 builder.Services.AddScoped<ISubjectService, SubjectService>();
 
+// Lowercase URL Routing
+builder.Services.AddRouting(options => options.LowercaseUrls = true);
+
 // Controllers
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+    });
 
 // Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -56,6 +63,9 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+// Global Exception Handling Middleware
+app.UseMiddleware<PRN232.LMS.API.Helpers.ExceptionMiddleware>();
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
